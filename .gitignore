@@ -1,5 +1,0 @@
-# Ignorar la llave privada
-*.pem
-
-# Ignorar credenciales u otros archivos temporales
-*.env
