@@ -1,0 +1,43 @@
+name: Detener Docker, EC2 y RDS
+
+on:
+  schedule:
+    # 0:00 VET = 04:00 UTC
+    - cron:  '0 4 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  stop:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      EC2_ID: i-01b29862c501519bd
+      EC2_IP: 107.23.40.111
+      RDS_ID: arow-db
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region:            ${{ env.AWS_REGION }}
+
+    - name: Detener contenedor vía SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H $EC2_IP >> ~/.ssh/known_hosts
+        ssh ubuntu@$EC2_IP "cd ~/stack && docker compose stop"
+
+    - name: Detener instancia EC2
+      run: |
+        aws ec2 stop-instances --instance-ids $EC2_ID
+
+    - name: Detener instancia RDS
+      run: |
+        aws rds stop-db-instance --db-instance-identifier $RDS_ID
