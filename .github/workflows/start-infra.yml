@@ -2,8 +2,8 @@ name: Arrancar EC2, RDS y Docker
 
 on:
   schedule:
-    # 7:00 VET = 11:00 UTC
-    - cron: '0 11 * * *'
+  # 07:00 VET = 11:00 UTC solo Lunes-Sábado (1-6). Domingo (0) no enciende.
+  - cron: '0 11 * * 1-6'
   workflow_dispatch: {}
 
 jobs:

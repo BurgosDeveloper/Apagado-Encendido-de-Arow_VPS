@@ -2,8 +2,10 @@ name: Detener Docker, EC2 y RDS
 
 on:
   schedule:
-    # 0:00 VET = 04:00 UTC
-    - cron:  '0 4 * * *'
+  # 00:00 VET diario = 04:00 UTC (apagado nocturno regular)
+  - cron:  '0 4 * * *'
+  # Sábado 12:00 VET = 16:00 UTC (apagado para fin de semana extendido)
+  - cron:  '0 16 * * 6'
   workflow_dispatch: {}
 
 jobs:
