@@ -1,4 +1,4 @@
-name: Arrancar EC2, RDS y Docker
+name: Arrancar solo EC2
 
 on:
   schedule:
@@ -12,8 +12,7 @@ jobs:
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       EC2_ID: i-01b29862c501519bd
-      EC2_IP: 107.23.40.111
-      RDS_ID: arow-db
+      
 
     steps:
     - name: Checkout repo
@@ -31,15 +30,3 @@ jobs:
         aws ec2 start-instances --instance-ids $EC2_ID
         aws ec2 wait instance-running --instance-ids $EC2_ID
 
-    - name: Arrancar instancia RDS
-      run: |
-        aws rds start-db-instance --db-instance-identifier $RDS_ID
-        aws rds wait db-instance-available --db-instance-identifier $RDS_ID
-
-    - name: Arrancar contenedor vía SSH
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H $EC2_IP >> ~/.ssh/known_hosts
-        ssh ubuntu@$EC2_IP "cd ~/stack && docker compose start"
