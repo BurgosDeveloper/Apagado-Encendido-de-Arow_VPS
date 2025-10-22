@@ -12,7 +12,6 @@ jobs:
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       EC2_ID: i-01b29862c501519bd
-      EC2_IP: 107.23.40.111
       RDS_ID: arow-db
 
     steps:
@@ -29,7 +28,9 @@ jobs:
     - name: Detener instancia EC2
       run: |
         aws ec2 stop-instances --instance-ids $EC2_ID
+        aws ec2 wait instance-stopped --instance-ids $EC2_ID
 
     - name: Detener instancia RDS
       run: |
         aws rds stop-db-instance --db-instance-identifier $RDS_ID
+        aws rds wait db-instance-stopped --db-instance-identifier $RDS_ID

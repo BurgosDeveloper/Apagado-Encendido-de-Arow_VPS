@@ -12,7 +12,6 @@ jobs:
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       EC2_ID: i-01b29862c501519bd
-      EC2_IP: 107.23.40.111
       RDS_ID: arow-db
 
     steps:
@@ -31,7 +30,60 @@ jobs:
         aws ec2 start-instances --instance-ids $EC2_ID
         aws ec2 wait instance-running --instance-ids $EC2_ID
 
+    - name: Esperar checks 2/2 de EC2
+      run: |
+        aws ec2 wait instance-status-ok --instance-ids $EC2_ID
+
     - name: Arrancar instancia RDS
       run: |
         aws rds start-db-instance --db-instance-identifier $RDS_ID
         aws rds wait db-instance-available --db-instance-identifier $RDS_ID
+
+    - name: Healthchecks de EasyPanel y proyectos
+      env:
+        EASYPANEL_URL: ${{ vars.EASYPANEL_URL }}
+        HEALTHCHECK_URLS: ${{ vars.HEALTHCHECK_URLS }}
+      run: |
+        set -euo pipefail
+        urls=""
+        if [ -n "${EASYPANEL_URL:-}" ]; then
+          urls="$EASYPANEL_URL"
+        fi
+        if [ -n "${HEALTHCHECK_URLS:-}" ]; then
+          urls="$urls"$'\n'"$HEALTHCHECK_URLS"
+        fi
+
+        echo "URLs a verificar:" || true
+        echo "$urls" | sed '/^$/d' | nl -ba || true
+
+        # Si no hay URLs configuradas, continuar sin fallar
+        if [ -z "$(echo "$urls" | sed '/^$/d')" ]; then
+          echo "No se configuraron URLs en vars.EASYPANEL_URL / vars.HEALTHCHECK_URLS; omitiendo healthchecks."
+          exit 0
+        fi
+
+        ok_count=0
+        total=$(echo "$urls" | sed '/^$/d' | wc -l | tr -d ' ')
+        while IFS= read -r url; do
+          [ -z "$url" ] && continue
+          echo "Verificando $url"
+          success=0
+          for i in {1..30}; do
+            code=$(curl -k -fsS -o /dev/null -w "%{http_code}" "$url" || true)
+            if [ -n "$code" ] && [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
+              echo "OK $url (HTTP $code)"
+              success=1
+              break
+            fi
+            echo "Intento $i/30: HTTP ${code:-N/A}; reintentando en 10s..."
+            sleep 10
+          done
+          if [ "$success" -eq 1 ]; then
+            ok_count=$((ok_count+1))
+          else
+            echo "FALLO: $url no respondió 2xx/3xx tras los reintentos"
+          fi
+        done <<<"$(echo "$urls" | sed '/^$/d')"
+
+        echo "Healthchecks OK: $ok_count / $total"
+        [ "$ok_count" -eq "$total" ]
