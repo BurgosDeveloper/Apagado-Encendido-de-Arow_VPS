@@ -2,8 +2,8 @@ name: Detener EC2 y RDS
 
 on:
   schedule:
-    # 00:00 VET diario = 04:00 UTC (apagado nocturno regular)
-    - cron:  '0 4 * * *'
+    # 12:00 VET Lunes-Sábado = 16:00 UTC (apagado del mediodía)
+    - cron:  '0 16 * * 1-6'
   workflow_dispatch: {}
 
 jobs:
@@ -25,12 +25,51 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region:            ${{ env.AWS_REGION }}
 
+    - name: Parar contenedores Docker en EC2 (SSM antes de apagar)
+      run: |
+        set -euo pipefail
+        DOC="AWS-RunShellScript"
+        echo "Enviando comando SSM para detener contenedores Docker..."
+        CMD_ID=$(aws ssm send-command \
+          --instance-ids "$EC2_ID" \
+          --document-name "$DOC" \
+          --comment "Detener contenedores Docker" \
+          --parameters commands='#!/bin/bash
+        set -euo pipefail
+        if command -v docker >/dev/null 2>&1; then
+          running=$(docker ps -q)
+          if [ -n "$running" ]; then
+            docker stop $running || true
+          fi
+          docker ps
+        else
+          echo "docker no instalado; nada que detener"
+        fi
+        ' \
+          --query 'Command.CommandId' --output text)
+
+        echo "Esperando resultado de SSM Command $CMD_ID..."
+        for i in {1..60}; do
+          STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$EC2_ID" --query 'Status' --output text || true)
+          echo "SSM status: $STATUS"
+          if [ "$STATUS" = "Success" ]; then exit 0; fi
+          if [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "Failed" ] || [ "$STATUS" = "TimedOut" ]; then
+            aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$EC2_ID" || true
+            exit 1
+          fi
+          sleep 5
+        done
+        echo "Timeout esperando ejecución SSM"
+        exit 1
+
     - name: Detener instancia EC2
       run: |
+        set -euo pipefail
         aws ec2 stop-instances --instance-ids $EC2_ID
         aws ec2 wait instance-stopped --instance-ids $EC2_ID
 
     - name: Detener instancia RDS
       run: |
+        set -euo pipefail
         aws rds stop-db-instance --db-instance-identifier $RDS_ID
         aws rds wait db-instance-stopped --db-instance-identifier $RDS_ID

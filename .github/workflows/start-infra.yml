@@ -27,15 +27,76 @@ jobs:
 
     - name: Arrancar instancia EC2
       run: |
+        set -euo pipefail
         aws ec2 start-instances --instance-ids $EC2_ID
         aws ec2 wait instance-running --instance-ids $EC2_ID
 
     - name: Esperar checks 2/2 de EC2
       run: |
+        set -euo pipefail
         aws ec2 wait instance-status-ok --instance-ids $EC2_ID
 
-    - name: Arrancar instancia RDS
+    - name: Asegurar Docker y contenedores arriba (SSM)
+      env:
+        CONTAINER_NAMES: ${{ vars.CONTAINER_NAMES }}
       run: |
+        set -euo pipefail
+        DOC="AWS-RunShellScript"
+        echo "Enviando comando SSM para iniciar Docker y contenedores..."
+        CMD_ID=$(aws ssm send-command \
+          --instance-ids "$EC2_ID" \
+          --document-name "$DOC" \
+          --comment "Arrancar Docker y contenedores" \
+          --parameters commands='#!/bin/bash
+        set -euo pipefail
+        if ! command -v docker >/dev/null 2>&1; then
+          echo "docker no instalado" >&2
+          exit 1
+        fi
+        # Asegurar servicio docker arriba
+        if command -v systemctl >/dev/null 2>&1; then
+          sudo systemctl start docker || true
+        fi
+        sleep 2
+        # Intentar levantar todos los contenedores existentes
+        ids=$(docker ps -a -q)
+        if [ -n "$ids" ]; then
+          docker start $ids || true
+        fi
+        # Verificación opcional por nombres esperados
+        if [ -n "'"'${CONTAINER_NAMES:-}'"'" ]; then
+          missing=0
+          for name in ${CONTAINER_NAMES}; do
+            if ! docker ps --format "{{.Names}}" | grep -E "^${name}(\\$|:)" -q; then
+              echo "Contenedor esperado no está arriba: $name" >&2
+              missing=$((missing+1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then
+            exit 2
+          fi
+        fi
+        docker ps
+        ' \
+          --query 'Command.CommandId' --output text)
+
+        echo "Esperando resultado de SSM Command $CMD_ID..."
+        for i in {1..60}; do
+          STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$EC2_ID" --query 'Status' --output text || true)
+          echo "SSM status: $STATUS"
+          if [ "$STATUS" = "Success" ]; then exit 0; fi
+          if [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "Failed" ] || [ "$STATUS" = "TimedOut" ]; then
+            aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$EC2_ID" || true
+            exit 1
+          fi
+          sleep 5
+        done
+        echo "Timeout esperando ejecución SSM"
+        exit 1
+
+    - name: Arrancar instancia RDS (al final)
+      run: |
+        set -euo pipefail
         aws rds start-db-instance --db-instance-identifier $RDS_ID
         aws rds wait db-instance-available --db-instance-identifier $RDS_ID
 
