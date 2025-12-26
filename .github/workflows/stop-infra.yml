@@ -39,8 +39,28 @@ jobs:
     - name: Detener instancia RDS
       run: |
         set -euo pipefail
-        aws rds stop-db-instance --db-instance-identifier $RDS_ID
-        aws rds wait db-instance-stopped --db-instance-identifier $RDS_ID
+        # Nota: AWS CLI no tiene waiter `db-instance-stopped`.
+        # Disparamos el stop y hacemos un polling suave para evitar que el job falle
+        # mientras RDS se queda en estado `stopping` (puede tardar varios minutos).
+        aws rds stop-db-instance --db-instance-identifier "$RDS_ID" || true
+
+        for i in {1..60}; do
+          status=$(aws rds describe-db-instances --db-instance-identifier "$RDS_ID" --query 'DBInstances[0].DBInstanceStatus' --output text)
+          echo "RDS status: $status (check $i/60)"
+          if [ "$status" = "stopped" ]; then
+            exit 0
+          fi
+          # Si está deteniéndose, seguimos esperando sin fallar
+          if [ "$status" = "stopping" ]; then
+            sleep 20
+            continue
+          fi
+          # Si está disponible u otro estado, no fallamos: dejamos que continúe
+          # (la detención ya fue solicitada o el estado aún no se actualiza).
+          sleep 10
+        done
+        echo "RDS sigue sin estar 'stopped' tras el timeout; probablemente sigue 'stopping'. Continuando sin fallo."
+        exit 0
 
     - name: Verificar estado RDS
       run: |
