@@ -2,8 +2,8 @@ name: Detener EC2 y RDS
 
 on:
   schedule:
-    # 12:00 VET Lunes-Sábado = 16:00 UTC (apagado del mediodía)
-    - cron:  '0 16 * * 1-6'
+    # 00:00 VET (medianoche) = 04:00 UTC (apagado diario)
+    - cron:  '0 4 * * *'
   workflow_dispatch: {}
 
 jobs:

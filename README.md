@@ -8,7 +8,7 @@ Este repo orquesta con GitHub Actions el encendido y apagado de:
 
 - Encendido: 07:00 VET (11:00 UTC) de lunes a sábado. Domingo no enciende.
   - Orden: EC2 -> RDS.
-- Apagado: 12:00 VET (16:00 UTC) de lunes a sábado.
+- Apagado: 00:00 VET (04:00 UTC) diario (medianoche).
   - Orden: EC2 -> RDS.
 
 Los workflows están en `.github/workflows`:
